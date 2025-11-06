@@ -153,7 +153,10 @@ def weighted_sample(opts_iter, p_var):
 
 def sample_bdd_conditioned(ctx, t, start, target, w):
     target_rename = ctx.let({'x': 'z'}, target)
-    p_label = [k for k in ctx.support(t) if k.startswith('mul_p')][0]
+    try:
+        p_label = [k for k in ctx.support(t) if k.startswith('mul_p')][0]
+    except:
+        return "No matching traces"
     non_zero = ctx.add_expr(f'{p_label} > 0')
     rel_states = t & start & target_rename & non_zero
     opts = ctx.pick_iter(rel_states, ['x','y','z',p_label])
@@ -238,7 +241,6 @@ if __name__ == "__main__":
         parser.add_argument("-repeats", help="Number of traces to generate", type=int, default=1000)
         parser.add_argument("-tlabel", help="Name of target label matching desired final states",
                             type=str, default='target')
-        parser.add_argument("-maxmem", help="Memory allocated to CUDD in GiB", type=int, default=1)
         parser.add_argument('--store', help="Store / try loading existing mats", action='store_true')
         args = parser.parse_args()
         filename = args.fname
@@ -246,23 +248,21 @@ if __name__ == "__main__":
         precision = args.precision
         repeats = args.repeats
         tlabel = args.tlabel
-        max_mem = args.maxmem
         store = args.store
     else:
-        filename = "dtmcs/brp/brp_16_2.drdd"
-        path_n = 4
-        precision = 3
+        filename = "dtmcs/die.drdd"
+        path_n = 16
+        precision = 4
         repeats = 100
         tlabel = 'target'
-        max_mem = 1
         store = False
     frac = 2**(precision) -1
 
     print(f'Running parameters: fname={filename}, n={path_n}, precision={precision},\
-        repeats={repeats}, label={tlabel}, maxmem={max_mem}GiB, store={store}')
+        repeats={repeats}, label={tlabel}, store={store}')
     
     bdd = _bdd.BDD()
-    bdd.configure(max_memory = max_mem*(2**30))
+    bdd.configure(max_growth=1.5)
     context = _fol.Context()
     context.bdd = bdd
     

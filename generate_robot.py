@@ -1,17 +1,22 @@
 
 # Remember model is 1-idx
 
-gridsize = (10, 5)
-down_bumpers = [(i, 2) for i in range(2, 9)] + [(9, 1)]
-up_bumpers = [(i, 4) for i in range(2, 9)] + [(9, 5)]
+x_size = 8
+y_size = 5
+
+gridsize = (x_size, 5)
+down_bumpers = [(i, 2) for i in range(2, x_size)] + [(x_size-1, 1)]
+up_bumpers = [(i, y_size-1) for i in range(2, x_size)] + [(x_size-1, y_size)]
 
 
 robot_init = (1,1)
-robot_goal = (10, 4)
-pickups = [(10, 1), (3, 5), (1,3)] # pickups on bumpers don't work
+robot_goal = (x_size, y_size-1)
+pickups = [(x_size, 1), (3, y_size), (1,3)] # pickups on bumpers don't work
 target_pickups = 2
 
-filename = 'dtmcs/robot_auto.pm'
+
+filename = 'dtmcs/robot_biased.pm'
+# storm --prism robot_auto.pm --buildfull --prismcompat --engine sparse --exportbuild robot.drn
 
 program_header = '''// Based on GRID WORLD MODEL OF ROBOT AND JANITOR
 // Hakan Younes/gxn/dxp 04/05/04
@@ -31,13 +36,17 @@ formula down = min(1,max(y1-1,0));
 
 // total number of moves the robot randomly picks from
 formula moves = right+left+up+down;
+formula ns = up+down;
+formula ew = right+left;
 '''.format(*gridsize)
 
 program_robot = '''module robot
 	x1 : [1..xn] init 1; // x position of robot (bottom left)
 	y1 : [1..yn] init 1; // y position of robot
 	
-	[move] true    -> up/moves:(y1'=y1+1) + down/moves:(y1'=y1-1) + left/moves:(x1'=x1-1) + right/moves:(x1'=x1+1); 
+	[move] (ns=2) -> (up+0.1)/moves:(y1'=y1+1) + (down-0.1)/moves:(y1'=y1-1) + left/moves:(x1'=x1-1) + right/moves:(x1'=x1+1); 
+	[move] (ns!=2) & (ew=2) -> up/moves:(y1'=y1+1) + down/moves:(y1'=y1-1) + (left-0.2)/moves:(x1'=x1-1) + (right+0.2)/moves:(x1'=x1+1); 
+ 	[move] (ns!=2) & (ew!=2) -> up/moves:(y1'=y1+1) + down/moves:(y1'=y1-1) + left/moves:(x1'=x1-1) + right/moves:(x1'=x1+1); 
 	[bump_down] ({}) & (down=1) -> 1: (y1'=y1-1);
     [bump_up] ({}) & (up=1) -> 1: (y1'=y1+1);
 endmodule

@@ -2,9 +2,10 @@ import os
 import time
 import numpy as np
 import scipy.sparse as sp
-import itertools
 from drn_to_sparse import read_drn
 import argparse
+import matplotlib.pyplot as plt
+import matplotlib as mpl
 
 np.set_printoptions(precision=10, suppress=True)
 rng = np.random.default_rng()
@@ -40,6 +41,26 @@ def extend_power_mats(gs, ts, up_to):
     for i in range(len(ts), up_to):
         ti = compute_mid_step(gs[i])
         ts.append(ti)
+
+def plot_mats(dirname, gs, ts):
+    fname = os.path.basename(dirname)
+    n_func = len(gs)
+    dim = gs[0].shape[0]
+    msize = 150/(dim)
+    cmap = mpl.colormaps['plasma']
+    colors = cmap(np.linspace(0.8, 0, n_func))
+    fig = plt.figure(figsize=(7,7))
+    for i, g in enumerate(reversed(gs)):
+        num_values = len(np.unique(g.data, sorted=False)) # type: ignore
+        plt.spy(g, figure=fig, markersize=msize,
+                c=colors[i], label=f'$g_{n_func-i-1}$, {num_values} unique values')
+    plt.title(f'Matrix Rep of $g_i$ for "{fname}"')
+    plt.xticks([0, dim-1])
+    plt.yticks([0, dim-1])
+    plt.legend(loc='lower left', markerscale=10/msize, reverse=True)
+    plt.tight_layout()
+    plt.savefig(dirname+'_gs.png')
+    plt.close()
 
 def ts_sanity_test(ts, path_n, init, target):
         # P=? [F={path_n} "target"]
@@ -267,10 +288,10 @@ if __name__ == "__main__":
         tlabel = args.tlabel
         store = args.store
     else:
-        filename = "dtmcs/die.drn"
-        path_n = 12
-        repeats = 100
-        tlabel = 'target'
+        filename = "dtmcs/herman/herman7.drn"
+        path_n = 128
+        repeats = 500
+        tlabel = 'stable'
         store = False
     print(f'Running parameters: fname={filename}, n={path_n}, repeats={repeats}, label={tlabel}, store={store}')
     parse_time = time.perf_counter_ns()
@@ -291,7 +312,5 @@ if __name__ == "__main__":
         precomp_time = time.perf_counter_ns()
         gs, ts = compute_power_mats(transitions, path_n)
         print(f'Finished precomputing functions: {ms_str_from(precomp_time)}.')
-    
+    #plot_mats(filename.replace('.drn', ''), gs, ts)
     res = generate_many_traces(gs, ts, path_n, init, target, repeats=repeats)
-     
-    
