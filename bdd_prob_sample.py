@@ -9,11 +9,11 @@ np.set_printoptions(precision=2, suppress=True)
 rng = np.random.default_rng()
 import argparse
 
-ms_str_from = lambda start_ns: f'{(perf_counter_ns()-start_ns)*1e-6:05.6f}ms'
-ms_str_any = lambda ns: f'{ns*1e-6:.6f}ms'
+_ms_str_from = lambda start_ns: f'{(perf_counter_ns()-start_ns)*1e-6:05.6f}ms'
+_ms_str_any = lambda ns: f'{ns*1e-6:.6f}ms'
 
 
-def compute_mid_step(ctx, gi, i):
+def _compute_mid_step(ctx, gi, i):
     dnm = ctx.vars[f'p{i}']['dom'][1] # not a tight bound
     vrs = {f'p{i}_': (0, dnm),
            f'mul_p{i}': (0, dnm),
@@ -31,7 +31,7 @@ def compute_mid_step(ctx, gi, i):
     return exist
 
 
-def sum_to_g(ctx, t, i):
+def _sum_to_g(ctx, t, i):
     # currently vert_num is upper bound from number of bits
     vert_num = ctx.vars['x']['dom'][1]
     
@@ -61,7 +61,7 @@ def sum_to_g(ctx, t, i):
     g_ = ctx.replace(cur_sum, {f'psum{vert_num-1}': f'sum{i}'})
     return g_
 
-def sum_to_g_refined(ctx, t, i):
+def _sum_to_g_refined(ctx, t, i):
     dnm = ctx.denominator
     hs_counts = [f'val_{j}' for j in ctx.y_dom]
     ctx.declare(**{val: (0, dnm) for val in hs_counts})
@@ -90,7 +90,7 @@ def sum_to_g_refined(ctx, t, i):
     g_ = ctx.replace(cur_sum, {f'psum{last_j}': f'sum{i}'})
     return g_
 
-def make_next_iter_ctx(ctx, next_i, gi):
+def _make_next_iter_ctx(ctx, next_i, gi):
     rename_vars = {f'p{next_i}': ctx.vars[f'p{next_i-1}']['dom']}
     ctx.declare(**rename_vars)
     vert_num = ctx.vars['x']['dom'][1]
@@ -106,7 +106,7 @@ def make_next_iter_ctx(ctx, next_i, gi):
     return (new_ctx, gi)
 
 
-def rename_iter_vars(ctx, next_i, gi):
+def _rename_iter_vars(ctx, next_i, gi):
     rename_vars = {f'p{next_i}': ctx.vars[f'p{next_i-1}']['dom']}
     ctx.declare(**rename_vars)
     new_g = ctx.let({f'sum{next_i-1}': f'p{next_i}', 'z':'y'}, gi)
@@ -121,14 +121,14 @@ def compute_power_graphs(ctx, trans, length):
     last_t = perf_counter_ns()
     for i in range(0, int(np.log2(length))):
         # t = g x g
-        t_k = compute_mid_step(ctx, g_k, i)
+        t_k = _compute_mid_step(ctx, g_k, i)
         ts.append(t_k)
         
         # no need to sum G if its the last iteration
         if i < int(np.log2(length))-1:
             # sum t over y
-            pre_g_k = sum_to_g_refined(ctx, t_k, i)
-            g_k = rename_iter_vars(ctx, i+1, pre_g_k)
+            pre_g_k = _sum_to_g_refined(ctx, t_k, i)
+            g_k = _rename_iter_vars(ctx, i+1, pre_g_k)
             gs.append(g_k)
         
         # print(f'Finished iteration {i}: {(perf_counter_ns()-last_t)*1e-9}')
@@ -137,7 +137,7 @@ def compute_power_graphs(ctx, trans, length):
     ctx.vars = {k:v for k,v in ctx.vars.items() if k in leave_vars or k.startswith('p') or k.startswith('mul_p')}
     return gs, ts
 
-def weighted_sample(opts_iter, p_var):
+def _weighted_sample(opts_iter, p_var):
     coords = []
     weights = []
     for o in opts_iter:
@@ -151,7 +151,7 @@ def weighted_sample(opts_iter, p_var):
     return rng.choice(coords, axis=0, p=weights)
 
 
-def sample_bdd_conditioned(ctx, t, start, target, w):
+def _sample_bdd_conditioned(ctx, t, start, target, w):
     target_rename = ctx.let({'x': 'z'}, target)
     try:
         p_label = [k for k in ctx.support(t) if k.startswith('mul_p')][0]
@@ -160,36 +160,36 @@ def sample_bdd_conditioned(ctx, t, start, target, w):
     non_zero = ctx.add_expr(f'{p_label} > 0')
     rel_states = t & start & target_rename & non_zero
     opts = ctx.pick_iter(rel_states, ['x','y','z',p_label])
-    res = weighted_sample(opts, p_label)
+    res = _weighted_sample(opts, p_label)
     if type(res) == str:
         return res
     w[0] = res[0]
     w[len(w)//2] = res[1]
     w[-1] = res[2]
 
-def sample_bdd_seq(ctx, t, x_idx, z_idx, w):
+def _sample_bdd_seq(ctx, t, x_idx, z_idx, w):
     start_bdd = ctx.add_expr(f'x={w[x_idx]}')
     target_bdd = ctx.add_expr(f'z={w[z_idx]}')
     p_label = [k for k in ctx.support(t) if k.startswith('mul_p')][0]
     non_zero = ctx.add_expr(f'{p_label} > 0')
     rel_states = t & start_bdd & target_bdd & non_zero
     opts = ctx.pick_iter(rel_states, ['x','y','z',f'{p_label}'])
-    res = weighted_sample(opts, p_label)
+    res = _weighted_sample(opts, p_label)
     w[(x_idx+z_idx)//2] = res[1]
 
 
 def draw_sample(ctx, ts, length, init, target):
     w = np.full(length+1, -1, dtype=int)
-    no_states = sample_bdd_conditioned(ctx, ts[-1], init, target, w)
+    no_states = _sample_bdd_conditioned(ctx, ts[-1], init, target, w)
     if no_states:
         return no_states
     for i in range(int(np.log2(length))-1, 0, -1):
         inc = np.power(2, i)
         for j in range(0, length, inc):
-            sample_bdd_seq(ctx, ts[i-1], j, j + inc, w)
+            _sample_bdd_seq(ctx, ts[i-1], j, j + inc, w)
     return w
     
-def state_to_og_vars(vars, total_bits, intval):
+def _state_to_og_vars(vars, total_bits, intval):
     bits = f'{intval:0{total_bits}b}'[::-1]
     idx= 0
     res = {}
@@ -214,7 +214,7 @@ def generate_many_traces(ctx, ts, length, init, target, save_traces=False, repea
         if save_traces:
             generated.append(tr)
     ns_taken_avg = time_total / repeats
-    print(f'Taken {ms_str_any(ns_taken_avg)} per sample')
+    print(f'Taken {_ms_str_any(ns_taken_avg)} per sample')
     if save_traces:
         return generated
 
@@ -226,8 +226,8 @@ def print_gs(ctx, gs):
         g_ = g & nz
         asgns = list(ctx.pick_iter(g_))
         for a in asgns:
-            x = state_to_og_vars(vars, 6, a['x'])
-            y = state_to_og_vars(vars, 6, a['y'])
+            x = _state_to_og_vars(vars, 6, a['x'])
+            y = _state_to_og_vars(vars, 6, a['y'])
             print(f'x = {x}, y={y}')
 
 if __name__ == "__main__":
@@ -241,6 +241,7 @@ if __name__ == "__main__":
         parser.add_argument("-repeats", help="Number of traces to generate", type=int, default=1000)
         parser.add_argument("-tlabel", help="Name of target label matching desired final states",
                             type=str, default='target')
+        parser.add_argument('-output', help="File destination for generated traces", type=str, default='')
         parser.add_argument('--store', help="Store / try loading existing mats", action='store_true')
         args = parser.parse_args()
         filename = args.fname
@@ -249,6 +250,7 @@ if __name__ == "__main__":
         repeats = args.repeats
         tlabel = args.tlabel
         store = args.store
+        output = args.output
     else:
         filename = "dtmcs/die.drdd"
         path_n = 16
@@ -256,10 +258,11 @@ if __name__ == "__main__":
         repeats = 100
         tlabel = 'target'
         store = False
+        output = filename + '.out'
     frac = 2**(precision) -1
 
-    print(f'Running parameters: fname={filename}, n={path_n}, precision={precision},\
-        repeats={repeats}, label={tlabel}, store={store}')
+    print(f'Running parameters: fname={filename}, n={path_n}, precision={precision}, '+
+          f'repeats={repeats}, label={tlabel}, store={store}, output={output if len(output) > 0 else False}')
     
     bdd = _bdd.BDD()
     bdd.configure(max_growth=1.5)
@@ -270,7 +273,7 @@ if __name__ == "__main__":
     model = load_bdds_from_drdd(context, filename, # type: ignore
                                 load_targets=['initial', 'transitions', f'label {tlabel}'],
                                 denominator=frac)
-    print(f'Finished parsing input: {ms_str_from(parse_time)}.')
+    print(f'Finished parsing input: {_ms_str_from(parse_time)}.')
     init = model['initial']
     target = model[f'label {tlabel}']
     assert len(target) > 0, "Target states missing"
@@ -287,15 +290,19 @@ if __name__ == "__main__":
     else:
         precomp_time = perf_counter_ns()
         gs, ts = compute_power_graphs(context, transitions, path_n)
-        print(f'Finished precomputing functions: {ms_str_from(precomp_time)}.')
+        print(f'Finished precomputing functions: {_ms_str_from(precomp_time)}.')
         
-
-    w = draw_sample(context, ts, path_n, init, target)
+    save_traces = len(output) > 0
+    
     res = generate_many_traces(context, ts, path_n,
-                init, target, save_traces=True,
+                init, target, save_traces=save_traces,
                 repeats=10)
     
-
+    if save_traces and res:
+        with open(output, 'w+') as f:
+            f.write('\n'.join([str(r)[1:-1] for r in res]))
+        print(f'{len(res)} traces written to {output}.')
+    
     # w = draw_sample(context, ts, path_n, init, target)
     # print(w)
     # vars = [('s', 3), ('d', 3)]

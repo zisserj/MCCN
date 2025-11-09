@@ -11,11 +11,11 @@ np.set_printoptions(precision=10, suppress=True)
 rng = np.random.default_rng()
 
 
-ms_str_from = lambda start_ns: f'{(time.perf_counter_ns()-start_ns)*1e-6:05.6f}ms'
-ms_str_any = lambda ns: f'{ns*1e-6:.6f}ms'
+_ms_str_from = lambda start_ns: f'{(time.perf_counter_ns()-start_ns)*1e-6:05.6f}ms'
+_ms_str_any = lambda ns: f'{ns*1e-6:.6f}ms'
 
 # make T[x,y,z] = G[x,y] * G[y,z]
-def compute_mid_step(g):
+def _compute_mid_step(g):
     wide = sp.block_diag(g, format='csr')
     mult = g @ wide
     # print(mult.data.nbytes + mult.indptr.nbytes + mult.indices.nbytes)
@@ -29,7 +29,7 @@ def compute_power_mats(trans, length):
         gs.append(gi)
     ts = []
     for gi in gs:
-        ti = compute_mid_step(gi)
+        ti = _compute_mid_step(gi)
         ts.append(ti)
         # print(ti.sum(axis=1))
     return gs, ts
@@ -39,7 +39,7 @@ def extend_power_mats(gs, ts, up_to):
         gi = gs[i] @ gs[i]
         gs.append(gi)
     for i in range(len(ts), up_to):
-        ti = compute_mid_step(gs[i])
+        ti = _compute_mid_step(gs[i])
         ts.append(ti)
 
 def plot_mats(dirname, gs, ts):
@@ -64,13 +64,13 @@ def plot_mats(dirname, gs, ts):
 
 def ts_sanity_test(ts, path_n, init, target):
         # P=? [F={path_n} "target"]
-        actual_prob_test = slice_csr_full(ts[int(np.log2(path_n))], init, target)
+        actual_prob_test = _slice_csr_full(ts[int(np.log2(path_n))], init, target)
         print(actual_prob_test.sum())
         # should be the same as the storm property test
     
 # M[i, j, k] = M'[i, (j*n)+k]
 # arrays as input for inital/target states
-def slice_csr_full(mat, x, z):
+def _slice_csr_full(mat, x, z):
     # every idx in z is a column in y
     d = mat.shape[0]
     if len(z) == 0:
@@ -82,13 +82,13 @@ def slice_csr_full(mat, x, z):
     return newshape
 
 # subsequent samples use simple indexing bc x, z arent arrays
-def slice_csr_col(mat, x, z):
+def _slice_csr_col(mat, x, z):
     d = mat.shape[0]
     new_s = np.s_[x, z::d]
     return mat[new_s]
 
 # pick a coordinate based on transition probability
-def weighted_idx_sample(mat):
+def _weighted_idx_sample(mat):
     coords = np.array(mat.nonzero())
     weights = mat.data
     weights /= weights.sum() # normalize weights to 1
@@ -96,41 +96,41 @@ def weighted_idx_sample(mat):
     return res
 
 # assumes initial states have the same probability of being chosen
-def sample_conditioned(ti, init, target, w, s=0, d=-1):
+def _sample_conditioned(ti, init, target, w, s=0, d=-1):
     d = len(w)+d if (d < 0) else d
     mid = (s+d)//2
-    rel_mat = slice_csr_full(ti, init, target)
+    rel_mat = _slice_csr_full(ti, init, target)
     if rel_mat.sum() == 0:
         return "No matching traces"
     # per_init_idx = np.sum(rel_mat, axis=(0, 1))
-    bounds_idx = weighted_idx_sample(rel_mat)
+    bounds_idx = _weighted_idx_sample(rel_mat)
     w[s] = init[bounds_idx[0]]
     w[mid] = bounds_idx[1]
     w[d] = target[bounds_idx[2]]
 
 
-def sample_seq_step(ti, lo, hi, w):
+def _sample_seq_step(ti, lo, hi, w):
     mid = int(np.mean([lo,hi]))
-    opts = slice_csr_col(ti, w[lo], w[hi])
-    asgn = weighted_idx_sample(opts)
+    opts = _slice_csr_col(ti, w[lo], w[hi])
+    asgn = _weighted_idx_sample(opts)
     w[mid] = asgn[0]
     # print(f'w[{mid}]={w[mid]}')
 
-def draw_sample_fill(ts, t_idx, w, start, end):
+def _draw_sample_fill(ts, t_idx, w, start, end):
     for i in range(t_idx, 0, -1):
         inc = np.power(2, i)
         for j in range(start, end, inc):
-            sample_seq_step(ts[i-1], j, j + inc, w)
+            _sample_seq_step(ts[i-1], j, j + inc, w)
 
 def draw_sample_simple(ts, length, init=[0], target=[]):
     w = np.full(length+1, -1, dtype=int)
-    no_states = sample_conditioned(ts[-1], init, target, w)
+    no_states = _sample_conditioned(ts[-1], init, target, w)
     if no_states:
         return no_states
-    draw_sample_fill(ts, int(np.log2(length))-1, w, 0, length)
+    _draw_sample_fill(ts, int(np.log2(length))-1, w, 0, length)
     return w
 
-def compute_nonpower_indices(gs, length, init):
+def compute_mid_indices(gs, length, init):
     bin_rep = f'{length:b}'
     assert len(gs) >= len(bin_rep), f"Gs are missing for length {length}"
     reachable = init
@@ -155,35 +155,35 @@ def compute_nonpower_indices(gs, length, init):
 
 # currently returns incorrect results, need to update to match
 # theoretical alg
-def draw_sample_nonpower(gs, ts, length, init, target, indices):
+def draw_sample_general(gs, ts, length, init, target, indices):
     w = np.full(length+1, -1, dtype=int)
     # backwards compute - given init and target, select middle nodes
     steps_iter = reversed(indices)
     g_idx, rel_states = next(steps_iter)
     try:
-        endpoint_sampled = target[weighted_idx_sample(rel_states[target])]
+        endpoint_sampled = target[_weighted_idx_sample(rel_states[target])]
     except:
         return "No matching traces"
     target_idx = length
     start_idx = target_idx - (2**(g_idx))
     for prev_g_idx, prev_state in steps_iter:
         # do highest order sampling
-        sample_conditioned(ts[g_idx-1], prev_state.nonzero()[0],
+        _sample_conditioned(ts[g_idx-1], prev_state.nonzero()[0],
                         endpoint_sampled, w, s=start_idx, d=target_idx)
         # "recursive" fill
-        draw_sample_fill(ts, g_idx-1, w, start_idx, target_idx)
+        _draw_sample_fill(ts, g_idx-1, w, start_idx, target_idx)
         g_idx = prev_g_idx
         endpoint_sampled = [w[start_idx]]
         target_idx = start_idx
         start_idx -= 2**g_idx
     if g_idx > 0: # last step is at least 2
-        sample_conditioned(ts[g_idx], init,
+        _sample_conditioned(ts[g_idx], init,
                         endpoint_sampled, w, s=start_idx, d=target_idx)
         # "recursive" fill
-        draw_sample_fill(ts, g_idx, w, start_idx, target_idx)
+        _draw_sample_fill(ts, g_idx, w, start_idx, target_idx)
     else: # last step is exactly 1
         opts = sp.coo_array(gs[0][init, endpoint_sampled])
-        init_idx = weighted_idx_sample(opts)
+        init_idx = _weighted_idx_sample(opts)
         w[0] = init[init_idx][0] # need to include g0 in args?
     return w
 
@@ -205,13 +205,13 @@ def generate_many_traces(gs, ts, length, init, target, save_traces=False, repeat
     target = np.array(target)
     if (path_n & (path_n-1) == 0) and path_n != 0: # https://stackoverflow.com/a/57025941
         draw = lambda: draw_sample_simple(ts, length, init, target)
-        rel_mat = slice_csr_full(ts[-1], init, target)
+        rel_mat = _slice_csr_full(ts[-1], init, target)
         print(f"Property probability is {rel_mat.sum()/len(init)}")
     else:
         if len(gs) < np.log2(path_n):
             extend_power_mats(gs, ts, len(gs)+1)
-        g_steps = compute_nonpower_indices(gs, length, init)
-        draw = lambda: draw_sample_nonpower(gs, ts, length, init, target, g_steps)
+        g_steps = compute_mid_indices(gs, length, init)
+        draw = lambda: draw_sample_general(gs, ts, length, init, target, g_steps)
         rel_mat = g_steps[-1][1][target]
         print(f"Property probability is {rel_mat.sum()/len(init)}")
     generated = []
@@ -228,7 +228,7 @@ def generate_many_traces(gs, ts, length, init, target, save_traces=False, repeat
         if save_traces:
             generated.append(tr)
     ns_taken_avg = time_total / repeats
-    print(f'Taken {ms_str_any(ns_taken_avg)} per sample')
+    print(f'Taken {_ms_str_any(ns_taken_avg)} per sample')
     if save_traces:
         return generated
     
@@ -255,11 +255,11 @@ def load_and_store(dirname, t0, length):
         print(f'Found prior mats: G({exist_gs-1}), T({exist_ts-1})')
         precomp_time = time.perf_counter_ns()
         extend_power_mats(gs, ts, num_mats)
-        print(f'Finished precomputing remaining functions: {ms_str_from(precomp_time)}.')
+        print(f'Finished precomputing remaining functions: {_ms_str_from(precomp_time)}.')
     else:
         precomp_time = time.perf_counter_ns()
         gs, ts = compute_power_mats(t0, length)
-        print(f'Finished precomputing functions: {ms_str_from(precomp_time)}.')
+        print(f'Finished precomputing functions: {_ms_str_from(precomp_time)}.')
     for i in range(exist_gs, len(gs)):
         mat_G = dirname + 'G{}.npz'
         sp.save_npz(mat_G.format(i), gs[i])
@@ -280,6 +280,7 @@ if __name__ == "__main__":
         parser.add_argument("-repeats", help="Number of traces to generate", type=int, default=1000)
         parser.add_argument("-tlabel", help="Name of target label matching desired final states",
                             type=str, default='target')
+        parser.add_argument('-output', help="File destination for generated traces", type=str, default='')
         parser.add_argument('--store', help="Store / try loading existing mats", action='store_true')
         args = parser.parse_args()
         filename = args.fname
@@ -287,16 +288,19 @@ if __name__ == "__main__":
         repeats = args.repeats
         tlabel = args.tlabel
         store = args.store
+        output = args.output
     else:
         filename = "dtmcs/herman/herman7.drn"
         path_n = 128
         repeats = 500
         tlabel = 'stable'
         store = False
-    print(f'Running parameters: fname={filename}, n={path_n}, repeats={repeats}, label={tlabel}, store={store}')
+        output = filename + '.out'
+    print(f'Running parameters: fname={filename}, n={path_n}, repeats={repeats},'+
+          f' label={tlabel}, store={store}, output={output if len(output) > 0 else False}')
     parse_time = time.perf_counter_ns()
     model = read_drn(filename, target_label=tlabel)
-    print(f'Finished parsing input: {ms_str_from(parse_time)}.')
+    print(f'Finished parsing input: {_ms_str_from(parse_time)}.')
     init = model['init']
     target = model['target']
     assert len(target) > 0, "Target states missing"
@@ -311,6 +315,16 @@ if __name__ == "__main__":
     else:
         precomp_time = time.perf_counter_ns()
         gs, ts = compute_power_mats(transitions, path_n)
-        print(f'Finished precomputing functions: {ms_str_from(precomp_time)}.')
+        print(f'Finished precomputing functions: {_ms_str_from(precomp_time)}.')
+    
+    
+    save_traces = len(output) > 0
     #plot_mats(filename.replace('.drn', ''), gs, ts)
-    res = generate_many_traces(gs, ts, path_n, init, target, repeats=repeats)
+    res = generate_many_traces(gs, ts, path_n, init,
+                target, repeats=repeats, save_traces=save_traces)
+    
+    if save_traces and res:
+        with open(output, 'w+') as f:
+            f.write('\n'.join([str(r)[1:-1] for r in res]))
+        print(f'{len(res)} traces written to {output}.')
+

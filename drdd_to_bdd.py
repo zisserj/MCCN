@@ -18,7 +18,7 @@ import re
 '''
 
 
-def build_bdd(ctx, vars, nodes_iter, prob=True, denominator=1000, elim_zero=False):
+def _build_bdd(ctx, vars, nodes_iter, prob=True, denominator=1000, elim_zero=False):
     # probability denominator is implicit in the bdd 
     ctx.bdd.configure(reordering=False)
     ctx.declare(**{v: 'bool' for v in vars})
@@ -57,7 +57,7 @@ def build_bdd(ctx, vars, nodes_iter, prob=True, denominator=1000, elim_zero=Fals
     ctx.bdd.configure(reordering=True)
     return res
 
-def rename_vars_xy(ctx, bdd_dict, vars):
+def _rename_vars_xy(ctx, bdd_dict, vars):
     # assuming storm export, where if v(x)=d then v(x+1)=d'
     map = {}
     for i, v in enumerate(vars):
@@ -94,16 +94,16 @@ def load_bdds_from_drdd(ctx, filename,
         size = int(match.group(3).strip())
         if name in load_targets:
             if name == "transitions":
-                res[name] = build_bdd(ctx, vars, nodes_iter, True, denominator, elim_zero=elim_zero)
+                res[name] = _build_bdd(ctx, vars, nodes_iter, True, denominator, elim_zero=elim_zero)
             else:
-                res[name] = build_bdd(ctx, vars, nodes_iter, False, elim_zero=elim_zero)
+                res[name] = _build_bdd(ctx, vars, nodes_iter, False, elim_zero=elim_zero)
     
     if rename_vars:
-        rename_vars_xy(ctx, res, vars)
-        refine_domain(ctx, res['transitions'])
+        _rename_vars_xy(ctx, res, vars)
+        _refine_domain(ctx, res['transitions'])
     return res
 
-def refine_domain(ctx, transitions):
+def _refine_domain(ctx, transitions):
     nz = ctx.add_expr('p0>0')
     states = nz & transitions
     asgns = list(ctx.pick_iter(states))

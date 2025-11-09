@@ -18,7 +18,7 @@ import re
 '''
 
 
-def build_add(agd, vars, nodes_iter):
+def _build_add(agd, vars, nodes_iter):
     agd.configure(reordering=False)
     agd.declare(*vars)
     temp_cache = [0]
@@ -46,7 +46,7 @@ def build_add(agd, vars, nodes_iter):
     agd.configure(reordering=True)
     return res
 
-def rename_vars_xy(agd, add_dict, vars):
+def _rename_vars_xy(agd, add_dict, vars):
     # assuming storm export, where if v100=d then v101=d'
     map = {}
     for i, v in enumerate(vars):
@@ -79,10 +79,10 @@ def load_adds_from_drdd(agd, filename,
 
         size = int(match.group(3).strip())
         if name in load_targets:
-            res[name] = build_add(agd, vars, nodes_iter)
+            res[name] = _build_add(agd, vars, nodes_iter)
     
     if rename_vars:
-        rename_vars_xy(agd, res, vars)
+        _rename_vars_xy(agd, res, vars)
         
     agd.configure(reordering=True)
     return res

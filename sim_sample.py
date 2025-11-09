@@ -3,7 +3,7 @@ import time
 import stormpy
 import stormpy.simulator
 
-from sparse_mat_sample import ms_str_from, ms_str_any
+from sparse_mat_sample import _ms_str_from, _ms_str_any
 
 
 def sample_trace(sim, length, target):
@@ -72,12 +72,12 @@ if __name__ == "__main__":
     model = stormpy.build_model(prism_program)
     sim = stormpy.simulator.create_simulator(model)
     assert sim
-    print(f'Finished creating simulator: {ms_str_from(parse_time)}.')
+    print(f'Finished creating simulator: {_ms_str_from(parse_time)}.')
     
     sim_time = time.perf_counter_ns()
     attempts, res = sample_relevant_traces(repeats, max_repeats, sim, path_n, tlabel)
     final_sim_time = time.perf_counter_ns() - sim_time
     if attempts >= max_repeats:
-        print(f"Failed to sample {repeats} conditional traces in {max_repeats} attempts (got {len(res)}) in {ms_str_any(final_sim_time)}.")
+        print(f"Failed to sample {repeats} conditional traces in {max_repeats} attempts (got {len(res)}) in {_ms_str_any(final_sim_time)}.")
     if len(res) > 0:
-        print(f'Taken {ms_str_any(final_sim_time/len(res))} per sample')
+        print(f'Taken {_ms_str_any(final_sim_time/len(res))} per sample')
