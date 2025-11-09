@@ -7,7 +7,7 @@ The realisations are based on different data structures - Algabraic Decision Dia
 
 ### Pipeline usage 
 
-![Pipeline](cond_sampling_pipeline.png)
+<img src="cond_sampling_pipeline.png" width="75%"/>
 
 Default usage meant for [Prism](https://www.prismmodelchecker.org) DTMC models, like those found in the `examples` folder. The set of initial states is assumed from the model, targeted states must be assigned a label.
 
@@ -39,7 +39,7 @@ options:
   --store           Store / try loading existing mats
 ```
 
-And example usage
+And example usage:
 ```
 python add_sample.py robot.drdd 32 -repeats 100 -output robot.drdd.out
 ```
